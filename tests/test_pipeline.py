@@ -23,7 +23,7 @@ from PIL import Image  # noqa: E402
 
 from make_test_image import SUBTITLE_1, SUBTITLE_2, SUBTITLE_REGION  # noqa: E402
 from make_test_image import make_game_image  # noqa: E402
-from src.ocr import clean_text, ocr_image  # noqa: E402
+from src.ocr import clean_text, configure_tesseract, ocr_image  # noqa: E402
 from src.pipeline import TextStabilizer  # noqa: E402
 from src.translate import Translator  # noqa: E402
 
@@ -154,6 +154,17 @@ def test_clean_text():
 
 
 def main():
+    print("== 0. Tìm Tesseract ==")
+    # Quan trọng: phải gọi configure_tesseract() để pytesseract trỏ đúng tới
+    # tesseract đã cài (kể cả khi tesseract không có trong PATH, như trên
+    # GitHub Actions sau khi cài im lặng — nó sẽ dùng đường dẫn mặc định
+    # C:\Program Files\Tesseract-OCR\tesseract.exe).
+    tess_path = configure_tesseract()
+    if tess_path is None:
+        print("  LỖI: không tìm thấy Tesseract (chưa cài hoặc sai đường dẫn).")
+        return 1
+    print(f"   Tesseract: {tess_path}")
+
     print("== 1. Tạo ảnh test ==")
     img1 = make_game_image(SUBTITLE_1, os.path.join(ASSETS, "game_subtitle_1.png"))
     img2 = make_game_image(SUBTITLE_2, os.path.join(ASSETS, "game_subtitle_2.png"))
