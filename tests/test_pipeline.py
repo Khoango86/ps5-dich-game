@@ -14,6 +14,15 @@ import os
 import sys
 from unittest import mock
 
+# Windows: stdout mặc định là cp1252, in tiếng Việt sẽ văng lỗi
+# UnicodeEncodeError ngay dòng in đầu tiên (test trên GitHub Actions fail
+# sau ~1 giây vì vậy). Ép stdout/stderr sang UTF-8 ngay từ đầu.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 ASSETS = os.path.join(HERE, "assets")
