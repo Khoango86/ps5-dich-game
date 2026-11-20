@@ -12,8 +12,16 @@ from PIL import Image, ImageDraw, ImageFont
 HERE = os.path.dirname(os.path.abspath(__file__))
 ASSETS = os.path.join(HERE, "assets")
 
-FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-FONT_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+FONT_BOLD_CANDIDATES = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "Fonts", "arialbd.ttf"),
+    os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "Fonts", "calibrib.ttf"),
+]
+FONT_REG_CANDIDATES = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "Fonts", "arial.ttf"),
+    os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "Fonts", "calibri.ttf"),
+]
 
 SUBTITLE_1 = [
     "We need to get out of Vice City before dawn.",
@@ -28,11 +36,18 @@ SUBTITLE_2 = [
 SUBTITLE_REGION = (140, 560, 1140, 660)  # left, top, right, bottom
 
 
-def _font(path, size):
-    try:
-        return ImageFont.truetype(path, size)
-    except OSError:
-        return ImageFont.load_default()
+def _font(candidates, size):
+    """Thử lần lượt các đường dẫn font (Linux rồi Windows); nếu không có
+    font nào thì dùng font mặc định của Pillow (rất nhỏ — chỉ là cứu cánh,
+    OCR có thể đọc kém)."""
+    if isinstance(candidates, str):
+        candidates = [candidates]
+    for path in candidates:
+        try:
+            return ImageFont.truetype(path, size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
 
 
 def make_game_image(subtitle_lines, out_path):
@@ -64,13 +79,13 @@ def make_game_image(subtitle_lines, out_path):
                  outline=(255, 255, 255), width=2)
     draw.ellipse([1175, 75, 1205, 105], fill=(255, 80, 80))
     # HUD: mục tiêu góc trái
-    font_small = _font(FONT_REG, 20)
+    font_small = _font(FONT_REG_CANDIDATES, 20)
     draw.text((30, 70), "OBJECTIVE: Reach the hideout", font=font_small,
               fill=(255, 255, 255))
 
     # Thanh phụ đề: nền đen mờ + chữ trắng đậm có bóng
     draw.rectangle([100, 545, 1180, 675], fill=(0, 0, 0, 170))
-    font_sub = _font(FONT_BOLD, 30)
+    font_sub = _font(FONT_BOLD_CANDIDATES, 30)
     y = 560
     for line in subtitle_lines:
         tw = draw.textlength(line, font=font_sub)
