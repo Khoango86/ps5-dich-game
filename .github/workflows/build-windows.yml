@@ -1,0 +1,85 @@
+name: Build Windows EXE
+
+# Build file .exe duy nhất cho Windows bằng PyInstaller.
+# Tesseract được đóng gói kèm trong .exe nên người dùng không cần cài thêm.
+# - Mỗi lần push lên main: build + lưu artifact.
+# - Mỗi lần push tag v* (vd: v1.0.0): build + tạo GitHub Release kèm file .exe.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cài Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cài thư viện Python
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Tải và cài Tesseract 5.5.0 (UB-Mannheim)
+        shell: pwsh
+        run: |
+          $url = "https://github.com/tesseract-ocr/tesseract/releases/download/5.5.0/tesseract-ocr-w64-setup-5.5.0.20241111.exe"
+          $installer = "$env:TEMP\tesseract-setup.exe"
+          Invoke-WebRequest -Uri $url -OutFile $installer
+          Start-Process -FilePath $installer -ArgumentList "/S" -Wait -WindowStyle Hidden
+          & "C:\Program Files\Tesseract-OCR\tesseract.exe" --version
+
+      - name: Chạy test (OCR thật + logic dịch)
+        run: python tests/test_pipeline.py
+
+      - name: Gói Tesseract đi kèm (chỉ lấy file cần thiết)
+        shell: pwsh
+        run: |
+          $src = "C:\Program Files\Tesseract-OCR"
+          $dst = "tesseract_bundle"
+          New-Item -ItemType Directory -Force -Path "$dst\tessdata" | Out-Null
+          Copy-Item "$src\tesseract.exe" "$dst\"
+          Copy-Item "$src\*.dll" "$dst\"
+          Copy-Item "$src\tessdata\eng.traineddata" "$dst\tessdata\"
+          Copy-Item "$src\tessdata\osd.traineddata" "$dst\tessdata\"
+          Get-ChildItem -Recurse $dst | Select-Object FullName, Length
+
+      - name: Build .exe bằng PyInstaller
+        run: |
+          pyinstaller --noconfirm --onefile --windowed --name "PS5-Dich-Game" --add-data "tesseract_bundle;tesseract" run.py
+          dir dist
+
+      - name: Lưu artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PS5-Dich-Game-windows
+          path: dist/PS5-Dich-Game.exe
+          if-no-files-found: error
+
+      - name: Tạo GitHub Release (chỉ khi push tag v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$env:GITHUB_REF_NAME" dist/PS5-Dich-Game.exe --title "PS5 Dich Game $env:GITHUB_REF_NAME" --notes "File .exe duy nhất cho Windows — tải về chạy ngay, đã gồm sẵn Tesseract, không cần cài thêm gì."
+
+      - name: Cập nhật bản "latest" (chỉ khi push lên main)
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag 2>$null; $true
+          gh release create latest dist/PS5-Dich-Game.exe --title "Bản mới nhất (latest)" --notes "File .exe duy nhất cho Windows — tải về chạy ngay, đã gồm sẵn Tesseract, không cần cài thêm gì. Link tải trực tiếp: https://github.com/${{ github.repository }}/releases/latest/download/PS5-Dich-Game.exe"
