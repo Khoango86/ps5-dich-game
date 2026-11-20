@@ -4,6 +4,7 @@ import queue
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from .gamedb import load as load_gamedb
 from .overlay import SubtitleOverlay
 from .pipeline import Pipeline
 from .region_picker import pick_region
@@ -22,7 +23,7 @@ class ControlPanel:
     def __init__(self, root, tesseract_path=None):
         self.root = root
         self.root.title("PS5 Dịch Game — Phụ đề tiếng Việt trực tiếp")
-        self.root.geometry("560x600")
+        self.root.geometry("560x630")
         self.root.resizable(False, False)
         self.tesseract_path = tesseract_path
 
@@ -41,6 +42,9 @@ class ControlPanel:
             self.region = dict(DEFAULT_REGION)
         self.results = queue.Queue()
         self.pipeline = None
+        # Kho text game (nếu có file data/gta6.db): tra cứu câu chuẩn
+        # trước khi dịch. Không có kho thì app dịch trực tiếp như cũ.
+        self.gamedb = load_gamedb()
         self.overlay = SubtitleOverlay(root)
         self.show_overlay = tk.BooleanVar(value=True)
         self.font_size = tk.IntVar(value=20)
@@ -76,6 +80,23 @@ class ControlPanel:
             justify="center",
         )
         hint.pack(**pad)
+
+        # Trạng thái kho text game
+        if self.gamedb.available:
+            gamedb_text = (
+                f"Kho GTA 6: {self.gamedb.row_count:,} dòng"
+                f" · đã dịch: {self.gamedb.translation_count:,} câu"
+                " — tra cứu câu chuẩn trước khi dịch"
+            )
+        else:
+            gamedb_text = (
+                "Chưa có kho text — đang dịch trực tiếp "
+                "(xem README để thêm kho GTA 6)"
+            )
+        self.gamedb_label = tk.Label(
+            self.root, text=gamedb_text, font=("Segoe UI", 9), fg="#555555"
+        )
+        self.gamedb_label.pack(**pad)
 
         # Vùng phụ đề
         region_frame = ttk.LabelFrame(self.root, text="Vùng phụ đề")
@@ -166,7 +187,8 @@ class ControlPanel:
             return
         if self.pipeline is not None:
             return
-        self.pipeline = Pipeline(self.region, self.results)
+        self.pipeline = Pipeline(self.region, self.results,
+                                 gamedb=self.gamedb)
         self.pipeline.start()
         self.start_btn.config(state="disabled")
         self.stop_btn.config(state="normal")
@@ -202,13 +224,31 @@ class ControlPanel:
             while True:
                 msg = self.results.get_nowait()
                 if msg[0] == "subtitle":
-                    _, en_text, vi_text = msg
+                    # Tuple mới có 4 phần (kèm meta khớp kho); vẫn chấp
+                    # nhận tuple 3 phần cũ để không vỡ khi gọi từ nơi khác.
+                    if len(msg) >= 4:
+                        _, en_text, vi_text, match_meta = msg[:4]
+                    else:
+                        _, en_text, vi_text = msg
+                        match_meta = None
                     self._set_text(self.orig_text, en_text)
                     self._set_text(self.vi_text, vi_text)
                     if self.show_overlay.get():
                         self.overlay.show(vi_text)
                     if en_text:
-                        self._set_status("Đang dịch…")
+                        if match_meta:
+                            # Nguồn phụ đề: từ kho dịch (đã dịch rồi),
+                            # hay dịch mới câu chuẩn vừa khớp kho.
+                            category = match_meta.get("category") or ""
+                            status = "Đang dịch… ✓ khớp kho"
+                            if category:
+                                status += f" ({category})"
+                            if match_meta.get("cached"):
+                                status += " — từ kho dịch"
+                            self._set_status(status)
+                        else:
+                            # Không khớp kho: dịch trực tiếp text OCR.
+                            self._set_status("Đang dịch…")
                 elif msg[0] == "error":
                     self._set_status(msg[1], error=True)
         except queue.Empty:
